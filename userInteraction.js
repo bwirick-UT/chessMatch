@@ -180,7 +180,7 @@ function screenToBoard(x, y, canvas, eye, at, up, projectionMatrix) {
 }
 
 // Handle mouse click on the canvas
-function handleCanvasClick(event, canvas, chessSet, camera, currentTime) {
+function handleCanvasClick(event, canvas, chessSet, camera, currentTime, multiplayerMoveCallback = null, playerColor = null) {
     // Set the board reference in the chess rules
     chessRules.board = chessSet.board;
     // Ignore clicks during camera animation or move processing
@@ -219,8 +219,12 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime) {
         if (!selectedPiece) {
             const piece = chessSet.board[row][col];
 
-            // Check if the piece belongs to the current player
-            if (piece && piece[0] === chessRules.currentPlayer) {
+            // In multiplayer mode, only allow selecting pieces of your color
+            const allowedColor = playerColor || chessRules.currentPlayer;
+            console.log('Checking piece selection. Piece:', piece, 'Allowed color:', allowedColor);
+
+            // Check if the piece belongs to the current player (or your assigned color in multiplayer)
+            if (piece && piece[0] === allowedColor) {
                 selectedPiece = piece;
                 selectedPosition = { row, col };
                 console.log(`Selected piece: ${piece} at position [${row}, ${col}]`);
@@ -233,29 +237,34 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime) {
                         if (chessRules.isValidMove(chessSet.board, fromRow, fromCol, toRow, toCol)) {
                             console.log(`Moving ${chessSet.board[fromRow][fromCol]} from [${fromRow}, ${fromCol}] to [${toRow}, ${toCol}]`);
 
-                            // Make the move using chess rules
-                            chessRules.makeMove(chessSet.board, fromRow, fromCol, toRow, toCol);
+                            // If this is a multiplayer move, send it to the server
+                            if (multiplayerMoveCallback) {
+                                multiplayerMoveCallback(fromRow, fromCol, toRow, toCol);
+                            } else {
+                                // Make the move using chess rules (local game)
+                                chessRules.makeMove(chessSet.board, fromRow, fromCol, toRow, toCol);
+
+                                // Update the status message and show notifications
+                                updateStatusMessage(true);
+
+                                // If the game is still ongoing, rotate the camera for the next player
+                                const newGameState = chessRules.getGameState();
+                                if (newGameState.state === GAME_ONGOING) {
+                                    // Switch player and rotate camera
+                                    isProcessingMove = true;
+                                    camera.rotateForPlayerChange(currentTime);
+
+                                    // Update the haunted piece when player changes
+                                    if (window.hauntedPiece) {
+                                        window.hauntedPiece.onPlayerChanged();
+                                    }
+                                }
+                            }
 
                             // Reset selection and clear highlights
                             selectedPiece = null;
                             selectedPosition = null;
                             clearHighlights();
-
-                            // Update the status message and show notifications
-                            updateStatusMessage(true);
-
-                            // If the game is still ongoing, rotate the camera for the next player
-                            const newGameState = chessRules.getGameState();
-                            if (newGameState.state === GAME_ONGOING) {
-                                // Switch player and rotate camera
-                                isProcessingMove = true;
-                                camera.rotateForPlayerChange(currentTime);
-
-                                // Update the haunted piece when player changes
-                                if (window.hauntedPiece) {
-                                    window.hauntedPiece.onPlayerChanged();
-                                }
-                            }
                         }
                     }
                 );
@@ -283,8 +292,11 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime) {
                 return;
             }
 
+            // In multiplayer mode, only allow selecting pieces of your color
+            const allowedColor = playerColor || chessRules.currentPlayer;
+
             // If clicking on another piece of the same color, select that piece instead
-            if (targetPiece && targetPiece[0] === chessRules.currentPlayer) {
+            if (targetPiece && targetPiece[0] === allowedColor) {
                 // Clear previous selection and highlights
                 clearHighlights();
 
@@ -301,29 +313,34 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime) {
                         if (chessRules.isValidMove(chessSet.board, fromRow, fromCol, toRow, toCol)) {
                             console.log(`Moving ${chessSet.board[fromRow][fromCol]} from [${fromRow}, ${fromCol}] to [${toRow}, ${toCol}]`);
 
-                            // Make the move using chess rules
-                            chessRules.makeMove(chessSet.board, fromRow, fromCol, toRow, toCol);
+                            // If this is a multiplayer move, send it to the server
+                            if (multiplayerMoveCallback) {
+                                multiplayerMoveCallback(fromRow, fromCol, toRow, toCol);
+                            } else {
+                                // Make the move using chess rules (local game)
+                                chessRules.makeMove(chessSet.board, fromRow, fromCol, toRow, toCol);
+
+                                // Update the status message and show notifications
+                                updateStatusMessage(true);
+
+                                // If the game is still ongoing, rotate the camera for the next player
+                                const newGameState = chessRules.getGameState();
+                                if (newGameState.state === GAME_ONGOING) {
+                                    // Switch player and rotate camera
+                                    isProcessingMove = true;
+                                    camera.rotateForPlayerChange(currentTime);
+
+                                    // Update the haunted piece when player changes
+                                    if (window.hauntedPiece) {
+                                        window.hauntedPiece.onPlayerChanged();
+                                    }
+                                }
+                            }
 
                             // Reset selection and clear highlights
                             selectedPiece = null;
                             selectedPosition = null;
                             clearHighlights();
-
-                            // Update the status message and show notifications
-                            updateStatusMessage(true);
-
-                            // If the game is still ongoing, rotate the camera for the next player
-                            const newGameState = chessRules.getGameState();
-                            if (newGameState.state === GAME_ONGOING) {
-                                // Switch player and rotate camera
-                                isProcessingMove = true;
-                                camera.rotateForPlayerChange(currentTime);
-
-                                // Update the haunted piece when player changes
-                                if (window.hauntedPiece) {
-                                    window.hauntedPiece.onPlayerChanged();
-                                }
-                            }
                         }
                     }
                 );
@@ -332,29 +349,34 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime) {
             else if (chessRules.isValidMove(chessSet.board, fromRow, fromCol, row, col)) {
                 console.log(`Moving ${selectedPiece} from [${fromRow}, ${fromCol}] to [${row}, ${col}]`);
 
-                // Make the move using chess rules
-                chessRules.makeMove(chessSet.board, fromRow, fromCol, row, col);
+                // If this is a multiplayer move, send it to the server
+                if (multiplayerMoveCallback) {
+                    multiplayerMoveCallback(fromRow, fromCol, row, col);
+                } else {
+                    // Make the move using chess rules (local game)
+                    chessRules.makeMove(chessSet.board, fromRow, fromCol, row, col);
+
+                    // Update the status message and show notifications
+                    updateStatusMessage(true);
+
+                    // If the game is still ongoing, rotate the camera for the next player
+                    const newGameState = chessRules.getGameState();
+                    if (newGameState.state === GAME_ONGOING) {
+                        // Switch player and rotate camera
+                        isProcessingMove = true;
+                        camera.rotateForPlayerChange(currentTime);
+
+                        // Update the haunted piece when player changes
+                        if (window.hauntedPiece) {
+                            window.hauntedPiece.onPlayerChanged();
+                        }
+                    }
+                }
 
                 // Reset selection and clear highlights
                 selectedPiece = null;
                 selectedPosition = null;
                 clearHighlights();
-
-                // Update the status message and show notifications
-                updateStatusMessage(true);
-
-                // If the game is still ongoing, rotate the camera for the next player
-                const newGameState = chessRules.getGameState();
-                if (newGameState.state === GAME_ONGOING) {
-                    // Switch player and rotate camera
-                    isProcessingMove = true;
-                    camera.rotateForPlayerChange(currentTime);
-
-                    // Update the haunted piece when player changes
-                    if (window.hauntedPiece) {
-                        window.hauntedPiece.onPlayerChanged();
-                    }
-                }
             } else {
                 console.log(`Invalid move from [${fromRow}, ${fromCol}] to [${row}, ${col}]`);
                 // Show notification for invalid move
@@ -381,4 +403,7 @@ function updateCamera(camera, currentTime) {
     return false;
 }
 
-export { handleCanvasClick, updateCamera, initStatusMessage, chessRules };
+// Make updateStatusMessage available globally for multiplayer
+window.updateStatusMessage = updateStatusMessage;
+
+export { handleCanvasClick, updateCamera, initStatusMessage, chessRules, updateStatusMessage };

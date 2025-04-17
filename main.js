@@ -6,6 +6,8 @@ import { handleCanvasClick, updateCamera, initStatusMessage, chessRules } from "
 import { Camera } from "./camera.js";
 import { updateHighlightPositions } from "./moveHighlighter.js";
 import { HauntedPiece } from "./hauntedPiece.js";
+import { FloatingPieces } from "./floatingPieces.js";
+import { ChessMultiplayer } from './multiplayer.js';
 
 main();
 async function main() {
@@ -118,8 +120,12 @@ async function main() {
 	// Initialize the haunted piece effect
 	const hauntedPiece = new HauntedPiece(gl, c, chessRules);
 
-	// Make haunted piece available globally
+	// Initialize the floating pieces effect
+	const floatingPieces = new FloatingPieces(gl, c);
+
+	// Make effects available globally
 	window.hauntedPiece = hauntedPiece;
+	window.floatingPieces = floatingPieces;
 
 	// Initialize the status message
 	initStatusMessage();
@@ -218,6 +224,105 @@ async function main() {
 		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 	}
 	reportWindowSize();
+
+	// Add multiplayer UI elements
+	const multiplayerUI = document.createElement('div');
+	multiplayerUI.innerHTML = `
+		<div id="multiplayer-controls" style="position: absolute; top: 10px; right: 10px; background-color: rgba(0, 0, 0, 0.7); padding: 10px; border-radius: 5px; z-index: 1000;">
+			<button id="create-game" style="margin-right: 5px; padding: 5px 10px;">Create Game</button>
+			<input id="game-id" placeholder="Game ID" style="margin-right: 5px; padding: 5px;">
+			<button id="join-game" style="padding: 5px 10px;">Join Game</button>
+		</div>
+	`;
+	document.body.appendChild(multiplayerUI);
+
+	// Initialize multiplayer with game manager object
+	const gameManager = {
+		chessSet: c,
+		camera: camera,
+		chessRules: chessRules,
+		makeMove: function(move) {
+			// This function will be called when a move is received from the server
+			const { fromRow, fromCol, toRow, toCol } = move;
+
+			// Make sure the move is valid
+			if (chessRules.isValidMove(c.board, fromRow, fromCol, toRow, toCol)) {
+				// Make the move
+				chessRules.makeMove(c.board, fromRow, fromCol, toRow, toCol);
+
+				// Update the status message
+				updateStatusMessage(true);
+
+				// Rotate camera for next player
+				camera.rotateForPlayerChange(previousTime);
+
+				// Update the haunted piece
+				if (window.hauntedPiece) {
+					window.hauntedPiece.onPlayerChanged();
+				}
+			}
+		},
+		startGame: function() {
+			// This function will be called when a second player joins
+			console.log('Multiplayer game started');
+			// Reset the game if needed
+			// resetGame(c, chessRules, camera, updateStatusMessage);
+		}
+	};
+
+	// Create the multiplayer instance
+	const multiplayer = new ChessMultiplayer(gameManager);
+
+	// We need to be careful with the click handlers
+	// Since we can't directly access existing handlers, we'll create a new one
+	// that works with the multiplayer system
+
+	// Remove any existing click handlers to avoid conflicts
+	const existingHandlers = [];
+	if (canvas.onclick) {
+		existingHandlers.push(canvas.onclick);
+		canvas.onclick = null;
+	}
+
+	// Add new click handler that checks for multiplayer
+	const multiplayerClickHandler = (event) => {
+		// Only handle clicks if not dragging
+		if (!isDragging) {
+			// Debug information
+			console.log('Click detected');
+			console.log('Multiplayer active:', multiplayer.isActive());
+			console.log('Current player:', chessRules.currentPlayer);
+			console.log('Your color:', multiplayer.playerColor);
+
+			// Check if it's a multiplayer game
+			if (multiplayer.isActive()) {
+				// If it's not your turn, prevent interaction
+				if (multiplayer.playerColor !== chessRules.currentPlayer) {
+					console.log('Not your turn');
+					return; // Not this player's turn
+				}
+
+				console.log('Your turn - processing click');
+
+				// Handle the click with a custom callback for multiplayer moves
+				// Pass the player's color as the last parameter to restrict piece selection
+				handleCanvasClick(event, canvas, c, camera, previousTime,
+					(fromRow, fromCol, toRow, toCol) => {
+						console.log('Move callback triggered:', fromRow, fromCol, toRow, toCol);
+						// Send the move to the server
+						multiplayer.sendMove(fromRow, fromCol, toRow, toCol);
+					},
+					multiplayer.playerColor // Pass player color to restrict piece selection
+				);
+			} else {
+				// Regular local game
+				handleCanvasClick(event, canvas, c, camera, previousTime);
+			}
+		}
+	};
+
+	// Add the new handler
+	canvas.addEventListener("click", multiplayerClickHandler);
 
 	//
 	// Main render loop

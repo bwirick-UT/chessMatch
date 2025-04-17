@@ -87,6 +87,11 @@ class ChessSet {
                             isHaunted = window.hauntedPiece.applyRotation(modelViewMatrix, row, col);
                         }
 
+                        // Apply floating effect if this piece is not the haunted piece
+                        if (!isHaunted && window.floatingPieces) {
+                            window.floatingPieces.applyFloating(modelViewMatrix, row, col, currentTime);
+                        }
+
                         // Rotate white pieces 180 degrees around Y axis to face black pieces
                         // Only if it's not the haunted piece (which is already rotated)
                         if (isWhite && !isHaunted) {
