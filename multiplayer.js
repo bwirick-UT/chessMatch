@@ -11,43 +11,34 @@ export class ChessMultiplayer {
 
         // Set up event listeners for UI buttons
         this.setupEventListeners();
+
+        console.log('ChessMultiplayer initialized');
     }
 
     connect() {
         try {
-            console.log('Attempting to connect to WebSocket server...');
-            // Use the same origin for WebSocket connection to avoid CORS issues
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}`;
-            console.log(`Connecting to WebSocket at: ${wsUrl}`);
+            console.log('Connecting to WebSocket server...');
+            // Use localhost:8080 for development
+            const wsUrl = 'ws://localhost:8080';
             this.ws = new WebSocket(wsUrl);
 
             this.ws.onopen = () => {
                 console.log('Connected to game server');
-                // Update UI to show connected status
-                this.updateGameUI();
+                this.updateGameUI('Connected to server. Create or join a game.');
             };
 
             this.ws.onclose = (event) => {
-                console.log(`Disconnected from game server: ${event.code} ${event.reason}`);
+                console.log(`Disconnected from game server: ${event.code}`);
                 this.active = false;
-                this.updateGameUI();
+                this.updateGameUI('Disconnected from server. Reconnecting...');
 
-                // Try to reconnect after a delay if it wasn't a normal closure
-                if (event.code !== 1000) {
-                    console.log('Attempting to reconnect in 5 seconds...');
-                    setTimeout(() => this.connect(), 5000);
-                }
+                // Try to reconnect after a delay
+                setTimeout(() => this.connect(), 3000);
             };
 
             this.ws.onerror = (error) => {
                 console.error('WebSocket error:', error);
-                // Show error message to user
-                const status = document.getElementById('multiplayer-status');
-                if (status) {
-                    status.textContent = 'Error connecting to server. Please check if the server is running.';
-                    status.style.color = 'red';
-                }
+                this.updateGameUI('Error connecting to server. Is the server running?', 'red');
             };
 
             this.ws.onmessage = (event) => {
@@ -57,38 +48,85 @@ export class ChessMultiplayer {
                 switch(data.type) {
                     case 'game_created':
                         this.gameId = data.gameId;
-                        this.playerColor = data.color;
+                        this.playerColor = 'w'; // First player is always white
+                        this.active = false; // Game not active until second player joins
+                        console.log('Game created. You are WHITE. Waiting for another player to join.');
+                        console.log('Player color set to:', this.playerColor);
+                        this.updateGameUI(`Game created! You are WHITE. Game ID: ${this.gameId} - Share this with your opponent.`);
+                        break;
+
+                    case 'game_joined':
+                        this.gameId = data.gameId;
+                        this.playerColor = 'b'; // Second player is always black
+                        console.log('Joined game as BLACK. Waiting for game to start.');
+                        console.log('Player color set to:', this.playerColor);
+                        this.updateGameUI(`Joined game as BLACK. Game ID: ${this.gameId} - Waiting for game to start...`);
+                        break;
+
+                    case 'game_started':
+                        this.gameId = data.gameId;
                         this.active = true;
-                        console.log('Game created. You are playing as:', this.playerColor);
-                        this.updateGameUI();
+
+                        // Reset the board and set current player to white
+                        if (this.gameManager.chessRules) {
+                            this.gameManager.chessRules.currentPlayer = 'w';
+                            if (this.gameManager.chessSet) {
+                                this.gameManager.chessSet.resetBoard();
+                            }
+                        }
+
+                        console.log(`Game started! You are ${this.playerColor === 'w' ? 'WHITE' : 'BLACK'}`);
+                        console.log('Player color is still:', this.playerColor);
+
+                        // Update UI based on player color and whose turn it is
+                        if (this.playerColor === 'w') {
+                            this.updateGameUI(`Game started! You are WHITE - Your turn to move.`, '#00ff00');
+                        } else {
+                            this.updateGameUI(`Game started! You are BLACK - Waiting for WHITE to move.`, 'yellow');
+                        }
                         break;
 
                     case 'move':
                         console.log('Received move from server:', data.move);
-                        // Only apply the move if it's from the opponent
-                        const moveFromOpponent = data.currentPlayer === this.playerColor;
-                        if (moveFromOpponent) {
-                            console.log('Applying opponent move');
-                            this.applyRemoteMove(data.move);
-                        } else {
-                            console.log('Ignoring own move reflected back from server');
-                        }
-                        break;
 
-                    case 'player_joined':
-                        // Start game
-                        this.active = true;
-                        console.log('Player joined. Game is starting. You are playing as:', this.playerColor);
-                        // Call the startGame method if available
-                        if (typeof this.gameManager.startGame === 'function') {
-                            this.gameManager.startGame();
+                        // Check if this is a move from the other player
+                        const moveFromOtherPlayer =
+                            (this.playerColor === 'w' && data.currentPlayer === 'w') ||
+                            (this.playerColor === 'b' && data.currentPlayer === 'b');
+
+                        if (moveFromOtherPlayer) {
+                            // This is a move from the other player, apply it
+                            console.log(`Applying move from ${this.playerColor === 'w' ? 'BLACK' : 'WHITE'} player`);
+                            this.applyRemoteMove(data.move);
+
+                            // Update UI to show it's now our turn
+                            if (this.playerColor === 'w') {
+                                this.updateGameUI(`BLACK moved. You are WHITE - Your turn.`, '#00ff00');
+                            } else {
+                                this.updateGameUI(`WHITE moved. You are BLACK - Your turn.`, '#00ff00');
+                            }
+                        } else {
+                            // This is confirmation of our own move
+                            console.log(`Server confirmed our move as ${this.playerColor === 'w' ? 'WHITE' : 'BLACK'}`);
+
+                            // Update UI to show it's the other player's turn
+                            if (this.playerColor === 'w') {
+                                this.updateGameUI(`You moved. You are WHITE - Waiting for BLACK.`, 'yellow');
+                            } else {
+                                this.updateGameUI(`You moved. You are BLACK - Waiting for WHITE.`, 'yellow');
+                            }
                         }
-                        this.updateGameUI();
                         break;
 
                     case 'error':
                         console.error('Server error:', data.message);
-                        alert('Game error: ' + data.message);
+                        this.updateGameUI(`Error: ${data.message}`, 'red');
+                        break;
+
+                    case 'player_disconnected':
+                        console.log('Player disconnected:', data.color);
+                        this.active = false;
+                        this.updateGameUI(`The ${data.color === 'w' ? 'WHITE' : 'BLACK'} player disconnected.`, 'red');
                         break;
                 }
             };
@@ -144,15 +182,32 @@ export class ChessMultiplayer {
     sendMove(fromRow, fromCol, toRow, toCol) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             console.log('Sending move to server:', fromRow, fromCol, toRow, toCol);
+            console.log('Player color:', this.playerColor);
+
+            // Check if game is active
+            if (!this.active) {
+                console.error('Game not active yet');
+                return;
+            }
 
             // Get chess rules and chess set from the game manager
             const chessRules = this.gameManager.chessRules;
             const chessSet = this.gameManager.chessSet;
 
+            // Check if it's this player's turn
+            if ((this.playerColor === 'w' && chessRules.currentPlayer !== 'w') ||
+                (this.playerColor === 'b' && chessRules.currentPlayer !== 'b')) {
+                console.error(`Not your turn. Current player: ${chessRules.currentPlayer}, Your color: ${this.playerColor}`);
+                return;
+            }
+
+            console.log(`You are ${this.playerColor === 'w' ? 'WHITE' : 'BLACK'} - sending move to server`);
+
             // Apply the move locally first
             if (chessRules && chessSet && chessSet.board) {
-                // Make the move using chess rules
-                chessRules.makeMove(chessSet.board, fromRow, fromCol, toRow, toCol);
+                // Make the move using chess rules but don't update the current player
+                // We're passing false to the updateGameState parameter to prevent switching players
+                chessRules.makeMove(chessSet.board, fromRow, fromCol, toRow, toCol, false);
 
                 // Update the UI
                 if (typeof updateStatusMessage === 'function') {
@@ -194,13 +249,24 @@ export class ChessMultiplayer {
             return;
         }
 
+        // Determine which player made the move
+        const movingPlayerColor = chessSet.board[fromRow][fromCol][0]; // 'w' or 'b'
+        const movingPlayerName = movingPlayerColor === 'w' ? 'WHITE' : 'BLACK';
+
+        console.log(`Applying remote move from ${movingPlayerName} player`);
         console.log(`Remote move: ${chessSet.board[fromRow][fromCol]} from [${fromRow}, ${fromCol}] to [${toRow}, ${toCol}]`);
         console.log('Current player before move:', chessRules.currentPlayer);
+        console.log('Player color:', this.playerColor);
 
         // Apply the move
         if (chessRules.isValidMove(chessSet.board, fromRow, fromCol, toRow, toCol)) {
-            // Make the move using chess rules
-            chessRules.makeMove(chessSet.board, fromRow, fromCol, toRow, toCol);
+            // Make the move using chess rules but don't update the current player
+            // We're passing false to the updateGameState parameter to prevent switching players
+            // The server will tell us the new current player
+            chessRules.makeMove(chessSet.board, fromRow, fromCol, toRow, toCol, false);
+
+            // Toggle the current player locally to match the server
+            chessRules.currentPlayer = chessRules.currentPlayer === 'w' ? 'b' : 'w';
             console.log('Current player after move:', chessRules.currentPlayer);
 
             // Update the status message if available
@@ -208,7 +274,7 @@ export class ChessMultiplayer {
                 updateStatusMessage(true);
             }
 
-            // Rotate camera for the next player
+            // Rotate camera to show the board from the current player's perspective
             if (camera) {
                 camera.rotateForPlayerChange(performance.now() * 0.001);
             }
@@ -219,13 +285,17 @@ export class ChessMultiplayer {
             }
 
             // Update the UI to show whose turn it is
-            this.updateGameUI();
+            if (this.playerColor === chessRules.currentPlayer) {
+                this.updateGameUI(`${movingPlayerName} moved. You are ${this.playerColor === 'w' ? 'WHITE' : 'BLACK'} - Your turn.`, '#00ff00');
+            } else {
+                this.updateGameUI(`${movingPlayerName} moved. You are ${this.playerColor === 'w' ? 'WHITE' : 'BLACK'} - Waiting for ${chessRules.currentPlayer === 'w' ? 'WHITE' : 'BLACK'}.`, 'yellow');
+            }
         } else {
             console.error('Invalid remote move received');
         }
     }
 
-    updateGameUI() {
+    updateGameUI(message, color = 'white') {
         // Update game status display
         let statusElement = document.getElementById('multiplayer-status');
 
@@ -246,38 +316,20 @@ export class ChessMultiplayer {
             statusElement = statusDiv;
         }
 
-        // Check WebSocket connection status
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            statusElement.textContent = 'Connecting to server...';
-            statusElement.style.color = 'yellow';
-            return;
-        }
+        // Debug information
+        console.log(`UI Update: ${message}`);
+        console.log(`Game state: active=${this.active}, gameId=${this.gameId}, color=${this.playerColor}`);
 
-        // Reset color to white (in case it was changed for error messages)
-        statusElement.style.color = 'white';
+        // Update the status message
+        statusElement.textContent = message;
+        statusElement.style.color = color;
 
-        if (this.active) {
-            if (this.gameId) {
-                // Get the current player from chess rules
-                const currentPlayer = this.gameManager.chessRules ? this.gameManager.chessRules.currentPlayer : null;
-                const isYourTurn = currentPlayer === this.playerColor;
-
-                // Show game status with turn information
-                statusElement.textContent = `Game ID: ${this.gameId} | You are playing as ${this.playerColor === 'w' ? 'White' : 'Black'} | ${isYourTurn ? 'YOUR TURN' : 'Waiting for opponent'}`;
-
-                // Highlight when it's your turn
-                statusElement.style.color = isYourTurn ? '#00ff00' : 'white';
-
-                // Show game ID in the input field for easy sharing
-                const gameIdInput = document.getElementById('game-id');
-                if (gameIdInput) {
-                    gameIdInput.value = this.gameId;
-                }
-            } else {
-                statusElement.textContent = 'Connected to server, waiting for game...';
+        // If we have a game ID, update the input field for easy sharing
+        if (this.gameId) {
+            const gameIdInput = document.getElementById('game-id');
+            if (gameIdInput) {
+                gameIdInput.value = this.gameId;
             }
-        } else {
-            statusElement.textContent = 'Connected to server. Create or join a game to start playing.';
         }
     }
 

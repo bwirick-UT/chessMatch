@@ -143,6 +143,8 @@ let onMoveMade = null;
 
 // Show highlights for valid moves
 function showValidMoves(chessRules, board, fromRow, fromCol, canvas, eye, at, up, projectionMatrix, moveCallback) {
+    console.log('showValidMoves called for piece at [' + fromRow + ',' + fromCol + ']');
+
     // Clear existing highlights
     clearHighlights();
 
@@ -154,7 +156,12 @@ function showValidMoves(chessRules, board, fromRow, fromCol, canvas, eye, at, up
 
     // Get the piece color
     const piece = board[fromRow][fromCol];
-    if (!piece) return;
+    if (!piece) {
+        console.error('No piece found at [' + fromRow + ',' + fromCol + ']');
+        return;
+    }
+
+    console.log('Finding valid moves for piece:', piece);
 
     const pieceColor = piece[0];
 
@@ -190,10 +197,16 @@ function showValidMoves(chessRules, board, fromRow, fromCol, canvas, eye, at, up
                 highlight.addEventListener('click', function() {
                     const destRow = parseInt(this.dataset.row);
                     const destCol = parseInt(this.dataset.col);
+                    console.log('Highlight clicked at [' + destRow + ',' + destCol + ']');
 
                     // Call the move callback if provided
                     if (onMoveMade && currentMoveSource) {
+                        console.log('Calling move callback with:', currentMoveSource.row, currentMoveSource.col, destRow, destCol);
                         onMoveMade(currentMoveSource.row, currentMoveSource.col, destRow, destCol);
+                    } else {
+                        console.error('Move callback or source position is missing');
+                        console.log('onMoveMade:', onMoveMade);
+                        console.log('currentMoveSource:', currentMoveSource);
                     }
                 });
             }

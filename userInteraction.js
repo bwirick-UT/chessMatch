@@ -222,9 +222,12 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime, multipl
             // In multiplayer mode, only allow selecting pieces of your color
             const allowedColor = playerColor || chessRules.currentPlayer;
             console.log('Checking piece selection. Piece:', piece, 'Allowed color:', allowedColor);
+            console.log('Player color from parameter:', playerColor);
+            console.log('Current player from rules:', chessRules.currentPlayer);
 
             // Check if the piece belongs to the current player (or your assigned color in multiplayer)
             if (piece && piece[0] === allowedColor) {
+                console.log('Piece color matches allowed color, selecting piece');
                 selectedPiece = piece;
                 selectedPosition = { row, col };
                 console.log(`Selected piece: ${piece} at position [${row}, ${col}]`);
@@ -282,21 +285,35 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime, multipl
             // Check if the clicked square contains a piece of the current player's color
             const targetPiece = chessSet.board[row][col];
 
+            // Debug the target piece
+            console.log('Target piece:', targetPiece, 'at position [' + row + ',' + col + ']');
+            console.log('Selected piece:', selectedPiece, 'at position [' + (selectedPosition ? selectedPosition.row : 'none') + ',' + (selectedPosition ? selectedPosition.col : 'none') + ']');
+
             // Check if the user clicked on the already selected piece (to deselect it)
             if (selectedPosition && row === selectedPosition.row && col === selectedPosition.col) {
-                // Deselect the piece
-                selectedPiece = null;
-                selectedPosition = null;
-                clearHighlights();
-                console.log('Piece deselected');
-                return;
+                // Only deselect if we're not in multiplayer mode or if it's our turn
+                if (!multiplayerMoveCallback ||
+                    (playerColor === chessRules.currentPlayer)) {
+                    // Deselect the piece
+                    selectedPiece = null;
+                    selectedPosition = null;
+                    clearHighlights();
+                    console.log('Piece deselected');
+                    return;
+                } else {
+                    console.log('Cannot deselect piece in multiplayer when not your turn');
+                }
             }
 
             // In multiplayer mode, only allow selecting pieces of your color
             const allowedColor = playerColor || chessRules.currentPlayer;
+            console.log('Checking piece selection (already have piece selected). Piece:', targetPiece, 'Allowed color:', allowedColor);
+            console.log('Player color from parameter:', playerColor);
+            console.log('Current player from rules:', chessRules.currentPlayer);
 
             // If clicking on another piece of the same color, select that piece instead
             if (targetPiece && targetPiece[0] === allowedColor) {
+                console.log('Target piece color matches allowed color, selecting new piece');
                 // Clear previous selection and highlights
                 clearHighlights();
 
@@ -347,6 +364,7 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime, multipl
             }
             // Otherwise, treat it as a move attempt
             else if (chessRules.isValidMove(chessSet.board, fromRow, fromCol, row, col)) {
+                console.log('Valid move detected from [' + fromRow + ',' + fromCol + '] to [' + row + ',' + col + ']');
                 console.log(`Moving ${selectedPiece} from [${fromRow}, ${fromCol}] to [${row}, ${col}]`);
 
                 // If this is a multiplayer move, send it to the server

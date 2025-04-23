@@ -1,7 +1,5 @@
 import { initShaderProgram } from "./shader.js";
 import { ChessSet } from "./chessSet.js";
-import { Sandra } from "./sandra.js";
-import { Granite } from "./granite.js";
 import { handleCanvasClick, updateCamera, initStatusMessage, chessRules } from "./userInteraction.js";
 import { Camera } from "./camera.js";
 import { updateHighlightPositions } from "./moveHighlighter.js";
@@ -98,8 +96,6 @@ async function main() {
 
 	const c = new ChessSet(gl);
 	await c.init(gl);
-	const s = new Sandra(gl);
-	const g = new Granite(gl);
 
 	// Set the board reference in chess rules
 	chessRules.board = c.board;
@@ -247,16 +243,16 @@ async function main() {
 
 			// Make sure the move is valid
 			if (chessRules.isValidMove(c.board, fromRow, fromCol, toRow, toCol)) {
-				// Make the move
-				chessRules.makeMove(c.board, fromRow, fromCol, toRow, toCol);
+				// Make the move but don't update the current player (the server will tell us the new player)
+				chessRules.makeMove(c.board, fromRow, fromCol, toRow, toCol, false);
 
 				// Update the status message
 				updateStatusMessage(true);
 
-				// Rotate camera for next player
+				// Rotate camera to show the board from the current player's perspective
 				camera.rotateForPlayerChange(previousTime);
 
-				// Update the haunted piece
+				// Update the haunted piece when player changes
 				if (window.hauntedPiece) {
 					window.hauntedPiece.onPlayerChanged();
 				}
@@ -265,8 +261,15 @@ async function main() {
 		startGame: function() {
 			// This function will be called when a second player joins
 			console.log('Multiplayer game started');
-			// Reset the game if needed
-			// resetGame(c, chessRules, camera, updateStatusMessage);
+
+			// Make sure the current player is set to white
+			chessRules.currentPlayer = 'w';
+
+			// Reset the board to initial state
+			c.resetBoard();
+
+			// Update the status message
+			updateStatusMessage(true);
 		}
 	};
 
@@ -288,31 +291,36 @@ async function main() {
 	const multiplayerClickHandler = (event) => {
 		// Only handle clicks if not dragging
 		if (!isDragging) {
-			// Debug information
-			console.log('Click detected');
-			console.log('Multiplayer active:', multiplayer.isActive());
-			console.log('Current player:', chessRules.currentPlayer);
-			console.log('Your color:', multiplayer.playerColor);
+			console.log('Click detected, playerColor:', multiplayer.playerColor);
 
 			// Check if it's a multiplayer game
-			if (multiplayer.isActive()) {
-				// If it's not your turn, prevent interaction
-				if (multiplayer.playerColor !== chessRules.currentPlayer) {
-					console.log('Not your turn');
+			if (multiplayer.gameId) {
+				// Check if game is active
+				if (!multiplayer.active) {
+					console.log('Game not active yet - waiting for second player');
+					return; // Game not started
+				}
+
+				// Check if it's this player's turn
+				const isPlayerTurn =
+					(multiplayer.playerColor === 'w' && chessRules.currentPlayer === 'w') ||
+					(multiplayer.playerColor === 'b' && chessRules.currentPlayer === 'b');
+
+				if (!isPlayerTurn) {
+					console.log(`Not your turn. You are ${multiplayer.playerColor === 'w' ? 'WHITE' : 'BLACK'}, current player is ${chessRules.currentPlayer === 'w' ? 'WHITE' : 'BLACK'}`);
 					return; // Not this player's turn
 				}
 
-				console.log('Your turn - processing click');
+				console.log(`You are ${multiplayer.playerColor === 'w' ? 'WHITE' : 'BLACK'} - processing your move`);
 
 				// Handle the click with a custom callback for multiplayer moves
-				// Pass the player's color as the last parameter to restrict piece selection
 				handleCanvasClick(event, canvas, c, camera, previousTime,
 					(fromRow, fromCol, toRow, toCol) => {
 						console.log('Move callback triggered:', fromRow, fromCol, toRow, toCol);
 						// Send the move to the server
 						multiplayer.sendMove(fromRow, fromCol, toRow, toCol);
 					},
-					multiplayer.playerColor // Pass player color to restrict piece selection
+					multiplayer.playerColor // Pass the player's color to ensure correct pieces can be selected
 				);
 			} else {
 				// Regular local game
@@ -368,10 +376,6 @@ async function main() {
 
 		// Draw the haunted piece
 		hauntedPiece.draw(gl, shaderProgram, currentTime);
-
-		//s.draw(gl, shaderProgram);
-
-		//g.draw(gl, shaderProgram);
 
 		requestAnimationFrame(redraw);
 	}

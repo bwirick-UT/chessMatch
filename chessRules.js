@@ -33,17 +33,23 @@ class ChessRules {
 
     // Check if a move is valid according to chess rules
     isValidMove(board, fromRow, fromCol, toRow, toCol) {
+        console.log('isValidMove called for [' + fromRow + ',' + fromCol + '] to [' + toRow + ',' + toCol + ']');
+
         // Get the piece at the starting position
         const piece = board[fromRow][fromCol];
+        console.log('Piece:', piece);
 
         // No piece at the starting position
         if (!piece) {
+            console.log('No piece at starting position');
             return false;
         }
 
         // Check if it's the correct player's turn
         const pieceColor = piece[0];
+        console.log('Piece color:', pieceColor, 'Current player:', this.currentPlayer);
         if (pieceColor !== this.currentPlayer) {
+            console.log('Not current player\'s turn');
             return false;
         }
 

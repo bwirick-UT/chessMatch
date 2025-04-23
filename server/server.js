@@ -56,6 +56,7 @@ const httpServer = http.createServer((req, res) => {
 
 // Create WebSocket server using the HTTP server
 const server = new WebSocket.Server({ server: httpServer });
+console.log('WebSocket server created and attached to HTTP server');
 
 // Track active games
 const games = new Map();
@@ -66,30 +67,48 @@ function generateGameId() {
 }
 
 // Create a new game
-function createGame(whitePlayer) {
+function createGame(firstPlayer) {
     const gameId = generateGameId();
     games.set(gameId, {
-        whitePlayer,
-        blackPlayer: null,
+        firstPlayer,  // Store first player, but don't assign color yet
+        secondPlayer: null,
+        whitePlayer: null,  // Will be assigned when second player joins
+        blackPlayer: null,  // Will be assigned when second player joins
         moves: [],
-        currentPlayer: 'w' // White starts
+        currentPlayer: 'w', // White starts
+        started: false      // Game hasn't started yet
     });
     console.log(`Game created: ${gameId}`);
     return gameId;
 }
 
-// Broadcast game state to both players
-function broadcastGameState(gameId) {
+// Start game and assign player colors
+function startGame(gameId) {
     if (!games.has(gameId)) return;
 
     const game = games.get(gameId);
 
+    if (!game.firstPlayer || !game.secondPlayer) {
+        console.error(`Cannot start game ${gameId}: missing players`);
+        return;
+    }
+
+    // First player is always white, second player is always black
+    game.whitePlayer = game.firstPlayer;
+    game.blackPlayer = game.secondPlayer;
+
+    console.log(`Game ${gameId}: First player is white, second player is black`);
+
+    game.started = true;
+    game.currentPlayer = 'w'; // White always starts
+
+    console.log(`Game ${gameId} started. First player is white, second player is black`);
+
     // Notify white player
     if (game.whitePlayer && game.whitePlayer.readyState === WebSocket.OPEN) {
         game.whitePlayer.send(JSON.stringify({
-            type: 'game_state',
+            type: 'game_started',
             gameId,
-            color: 'w',
             moves: game.moves,
             currentPlayer: game.currentPlayer
         }));
@@ -98,46 +117,34 @@ function broadcastGameState(gameId) {
     // Notify black player
     if (game.blackPlayer && game.blackPlayer.readyState === WebSocket.OPEN) {
         game.blackPlayer.send(JSON.stringify({
-            type: 'game_state',
+            type: 'game_started',
             gameId,
-            color: 'b',
             moves: game.moves,
             currentPlayer: game.currentPlayer
         }));
-    }
-
-    // If both players are connected, notify that the game can start
-    if (game.whitePlayer && game.blackPlayer) {
-        // Notify white player that black joined
-        if (game.whitePlayer.readyState === WebSocket.OPEN) {
-            game.whitePlayer.send(JSON.stringify({
-                type: 'player_joined',
-                gameId,
-                color: 'b'
-            }));
-        }
-
-        // Notify black player that they joined successfully
-        if (game.blackPlayer.readyState === WebSocket.OPEN) {
-            game.blackPlayer.send(JSON.stringify({
-                type: 'player_joined',
-                gameId,
-                color: 'w'
-            }));
-        }
     }
 }
 
 // Broadcast a move to both players
 function broadcastMove(gameId, move) {
-    if (!games.has(gameId)) return;
+    if (!games.has(gameId)) {
+        console.error(`Game ${gameId} not found when broadcasting move`);
+        return;
+    }
 
     const game = games.get(gameId);
+    console.log(`Broadcasting move in game ${gameId}:`, move);
+
+    // Make sure the game has started
+    if (!game.started) {
+        console.error(`Cannot broadcast move: game ${gameId} has not started yet`);
+        return;
+    }
 
     // Add move to game history
     game.moves.push(move);
 
-    // Toggle current player
+    // Toggle the current player after each move
     game.currentPlayer = game.currentPlayer === 'w' ? 'b' : 'w';
     console.log(`Game ${gameId}: Current player is now ${game.currentPlayer}`);
 
@@ -166,10 +173,9 @@ function broadcastMove(gameId, move) {
 }
 
 // Handle client connections
-server.on('connection', (ws) => {
-    console.log('Client connected');
+server.on('connection', (ws, req) => {
+    console.log('Client connected from:', req.socket.remoteAddress);
     let gameId = null;
-    let playerColor = null;
 
     ws.on('message', (message) => {
         try {
@@ -179,21 +185,21 @@ server.on('connection', (ws) => {
             switch(data.type) {
                 case 'create_game':
                     gameId = createGame(ws);
-                    playerColor = 'w'; // First player is always white
-                    console.log(`Player assigned color: ${playerColor} for game: ${gameId}`);
+                    console.log(`Game ${gameId} created, waiting for second player`);
                     ws.send(JSON.stringify({
                         type: 'game_created',
                         gameId,
-                        color: playerColor
+                        message: 'Game created, waiting for second player'
                     }));
+                    console.log(`Game ${gameId} created successfully`);
                     break;
 
                 case 'join_game':
                     if (games.has(data.gameId)) {
                         const game = games.get(data.gameId);
 
-                        // Check if the game already has a black player
-                        if (game.blackPlayer) {
+                        // Check if the game already has a second player
+                        if (game.secondPlayer) {
                             ws.send(JSON.stringify({
                                 type: 'error',
                                 message: 'Game is full'
@@ -202,19 +208,18 @@ server.on('connection', (ws) => {
                         }
 
                         gameId = data.gameId;
-                        playerColor = 'b'; // Second player is always black
-                        console.log(`Player assigned color: ${playerColor} for game: ${gameId}`);
-                        game.blackPlayer = ws;
+                        game.secondPlayer = ws;
+                        console.log(`Second player joined game ${gameId}`);
 
                         // Send confirmation to the joining player
                         ws.send(JSON.stringify({
-                            type: 'game_created', // Reuse the same message type for simplicity
+                            type: 'game_joined',
                             gameId,
-                            color: playerColor
+                            message: 'Joined game, assigning players...'
                         }));
 
-                        // Notify both players that the game can start
-                        broadcastGameState(gameId);
+                        // Start the game and assign player colors
+                        startGame(gameId);
                     } else {
                         ws.send(JSON.stringify({
                             type: 'error',
@@ -227,14 +232,39 @@ server.on('connection', (ws) => {
                     if (gameId && games.has(gameId)) {
                         const game = games.get(gameId);
 
-                        // Validate player's turn
-                        if (playerColor !== game.currentPlayer) {
+                        // Check if game has started
+                        if (!game.started) {
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                message: 'Game has not started yet'
+                            }));
+                            return;
+                        }
+
+                        // Check if it's this player's turn
+                        const isWhitePlayer = ws === game.whitePlayer;
+                        const isBlackPlayer = ws === game.blackPlayer;
+                        const isWhiteTurn = game.currentPlayer === 'w';
+                        const isBlackTurn = game.currentPlayer === 'b';
+
+                        if ((isWhitePlayer && !isWhiteTurn) || (isBlackPlayer && !isBlackTurn)) {
                             ws.send(JSON.stringify({
                                 type: 'error',
                                 message: 'Not your turn'
                             }));
                             return;
                         }
+
+                        // Make sure the player is either white or black
+                        if (!isWhitePlayer && !isBlackPlayer) {
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                message: 'You are not a player in this game'
+                            }));
+                            return;
+                        }
+
+                        console.log(`Processing move from ${isWhitePlayer ? 'white' : 'black'} player in game ${gameId}`);
 
                         // Broadcast move to both players
                         broadcastMove(gameId, data.move);
@@ -269,17 +299,31 @@ server.on('connection', (ws) => {
         if (gameId && games.has(gameId)) {
             const game = games.get(gameId);
 
-            // Determine which player disconnected and notify the other
-            if (playerColor === 'w' && game.blackPlayer) {
+            // If game hasn't started yet, just clean up
+            if (!game.started) {
+                if (game.firstPlayer === ws) {
+                    console.log(`First player disconnected from game ${gameId}, removing game`);
+                    games.delete(gameId);
+                } else if (game.secondPlayer === ws) {
+                    console.log(`Second player disconnected from game ${gameId}, resetting second player`);
+                    game.secondPlayer = null;
+                }
+                return;
+            }
+
+            // Game has started, notify the other player
+            if (ws === game.whitePlayer && game.blackPlayer) {
                 game.blackPlayer.send(JSON.stringify({
                     type: 'player_disconnected',
                     color: 'w'
                 }));
-            } else if (playerColor === 'b' && game.whitePlayer) {
+                console.log(`White player disconnected from game ${gameId}, notified black player`);
+            } else if (ws === game.blackPlayer && game.whitePlayer) {
                 game.whitePlayer.send(JSON.stringify({
                     type: 'player_disconnected',
                     color: 'b'
                 }));
+                console.log(`Black player disconnected from game ${gameId}, notified white player`);
             }
         }
     });
