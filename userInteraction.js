@@ -1,4 +1,3 @@
-// User interaction handling for chess game
 import { ChessRules, GAME_ONGOING, GAME_CHECKMATE, GAME_STALEMATE, GAME_DRAW } from "./chessRules.js";
 import {
     showNotification,
@@ -7,29 +6,31 @@ import {
     showStalemateNotification,
     showDrawNotification
 } from "./notifications.js";
-import { showValidMoves, clearHighlights, updateHighlightPositions } from "./moveHighlighter.js";
+import { showValidMoves, clearHighlights } from "./moveHighlighter.js";
 import { createNewGameButton, hideNewGameButton, resetGame } from "./gameReset.js";
 
-// Game state
-let isProcessingMove = false; // Flag to prevent input during camera animation
+let isProcessingMove = false;
 
-// Initialize chess rules
 const chessRules = new ChessRules();
 
-// Track the selected piece and its position
 let selectedPiece = null;
 let selectedPosition = null;
 
-// Game status message element
+window.chessSelection = {
+    get selectedPiece() { return selectedPiece; },
+    set selectedPiece(value) { selectedPiece = value; },
+    get selectedPosition() { return selectedPosition; },
+    set selectedPosition(value) { selectedPosition = value; }
+};
+
+window.clearHighlights = () => clearHighlights();
+
 let statusMessageElement = null;
 
-// Initialize the status message element
 function initStatusMessage() {
-    // Check if the element already exists
     statusMessageElement = document.getElementById('chess-status');
 
     if (!statusMessageElement) {
-        // Create a new status message element
         statusMessageElement = document.createElement('div');
         statusMessageElement.id = 'chess-status';
         statusMessageElement.style.position = 'absolute';
@@ -42,15 +43,12 @@ function initStatusMessage() {
         statusMessageElement.style.fontFamily = 'Arial, sans-serif';
         statusMessageElement.style.zIndex = '1000';
 
-        // Add it to the document body
         document.body.appendChild(statusMessageElement);
     }
 
-    // Set initial status message
     updateStatusMessage();
 }
 
-// Update the status message based on game state
 function updateStatusMessage(showNotifications = false) {
     if (!statusMessageElement) return;
 
@@ -82,7 +80,6 @@ function updateStatusMessage(showNotifications = false) {
             break;
         case GAME_ONGOING:
             message = `${chessRules.currentPlayer === 'w' ? 'White' : 'Black'}'s turn`;
-            // Only check for check if we have a board reference
             if (chessRules.board) {
                 const inCheck = chessRules.isInCheck(chessRules.board, chessRules.currentPlayer);
                 if (inCheck) {
@@ -92,22 +89,17 @@ function updateStatusMessage(showNotifications = false) {
                     }
                 }
             }
-            // Hide the new game button during ongoing game
             hideNewGameButton();
             break;
     }
 
     statusMessageElement.textContent = message;
 
-    // Show the new game button if the game is over
     if (gameOver) {
         createNewGameButton(() => {
-            // This function will be called when the new game button is clicked
             let chessSet = null;
             let camera = null;
 
-            // Find the chessSet and camera objects from the main.js scope
-            // We'll need to pass these from main.js when we call updateStatusMessage
             if (window.chessObjects) {
                 chessSet = window.chessObjects.chessSet;
                 camera = window.chessObjects.camera;
@@ -123,24 +115,19 @@ function updateStatusMessage(showNotifications = false) {
     }
 }
 
-// Convert screen coordinates to board coordinates
 function screenToBoard(x, y, canvas, eye, at, up, projectionMatrix) {
-    // Normalize device coordinates
     const ndcX = (2.0 * x) / canvas.width - 1.0;
     const ndcY = 1.0 - (2.0 * y) / canvas.height;
 
-    // Create ray in clip space
     const clipCoords = vec4.fromValues(ndcX, ndcY, -1.0, 1.0);
 
-    // Convert to eye space
     const invProjectionMatrix = mat4.create();
     mat4.invert(invProjectionMatrix, projectionMatrix);
     const eyeCoords = vec4.create();
     vec4.transformMat4(eyeCoords, clipCoords, invProjectionMatrix);
-    eyeCoords[2] = -1.0; // Forward direction
-    eyeCoords[3] = 0.0;  // Direction vector
+    eyeCoords[2] = -1.0;
+    eyeCoords[3] = 0.0;
 
-    // Convert to world space
     const viewMatrix = mat4.create();
     mat4.lookAt(viewMatrix, eye, at, up);
     const invViewMatrix = mat4.create();
@@ -150,7 +137,6 @@ function screenToBoard(x, y, canvas, eye, at, up, projectionMatrix) {
     const rayDirection = vec3.fromValues(worldCoords[0], worldCoords[1], worldCoords[2]);
     vec3.normalize(rayDirection, rayDirection);
 
-    // Ray-plane intersection (assuming board is on y=0 plane)
     const rayOrigin = eye;
     const planeNormal = vec3.fromValues(0, 1, 0);
     const planePoint = vec3.fromValues(0, 0, 0);
@@ -159,18 +145,13 @@ function screenToBoard(x, y, canvas, eye, at, up, projectionMatrix) {
     if (Math.abs(denominator) > 0.0001) {
         const t = vec3.dot(vec3.sub(vec3.create(), planePoint, rayOrigin), planeNormal) / denominator;
         if (t >= 0) {
-            // Calculate intersection point
             const intersection = vec3.create();
             vec3.scaleAndAdd(intersection, rayOrigin, rayDirection, t);
 
-            // Convert to board coordinates (0-7, 0-7)
             const boardX = Math.floor(intersection[0] + 4);
             const boardZ = Math.floor(intersection[2] + 4);
 
-            // Check if within board bounds
             if (boardX >= 0 && boardX < 8 && boardZ >= 0 && boardZ < 8) {
-                // Flip the row coordinate to match standard chess notation
-                // where [0,0] is the bottom-left corner from white's perspective
                 return { row: 7 - boardZ, col: boardX };
             }
         }
@@ -179,26 +160,20 @@ function screenToBoard(x, y, canvas, eye, at, up, projectionMatrix) {
     return null;
 }
 
-// Handle mouse click on the canvas
 function handleCanvasClick(event, canvas, chessSet, camera, currentTime) {
-    // Set the board reference in the chess rules
     chessRules.board = chessSet.board;
-    // Ignore clicks during camera animation or move processing
     if (isProcessingMove || camera.isAnimating) {
         return;
     }
 
-    // If the game is over, ignore clicks
     const gameState = chessRules.getGameState();
     if (gameState.state !== GAME_ONGOING) {
         console.log(`Game is over: ${gameState.state}`);
         return;
     }
 
-    // Get current camera position for ray casting
     const { eye, at, up } = camera.getPosition();
 
-    // Create projection matrix for ray casting
     const projectionMatrix = mat4.create();
     const fov = 60 * Math.PI / 180;
     const near = 1;
@@ -209,53 +184,76 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime) {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
-    // Convert screen coordinates to board coordinates
     const boardPos = screenToBoard(x, y, canvas, eye, at, up, projectionMatrix);
 
     if (boardPos) {
         const { row, col } = boardPos;
 
-        // If no piece is selected, try to select one
         if (!selectedPiece) {
             const piece = chessSet.board[row][col];
 
-            // Check if the piece belongs to the current player
             if (piece && piece[0] === chessRules.currentPlayer) {
                 selectedPiece = piece;
                 selectedPosition = { row, col };
                 console.log(`Selected piece: ${piece} at position [${row}, ${col}]`);
 
-                // Show valid moves for the selected piece with a callback for when a move is made
                 showValidMoves(chessRules, chessSet.board, row, col, canvas, eye, at, up, projectionMatrix,
-                    // This callback will be called when a move highlight is clicked
                     (fromRow, fromCol, toRow, toCol) => {
-                        // Make the move
                         if (chessRules.isValidMove(chessSet.board, fromRow, fromCol, toRow, toCol)) {
                             console.log(`Moving ${chessSet.board[fromRow][fromCol]} from [${fromRow}, ${fromCol}] to [${toRow}, ${toCol}]`);
 
-                            // Make the move using chess rules
+                            const targetPiece = chessSet.board[toRow][toCol];
+                            const isCapture = targetPiece !== null;
+
+                            const movingPiece = chessSet.board[fromRow][fromCol];
+                            const isPawn = movingPiece && movingPiece[1] === 'p';
+                            const isEnPassant = isPawn && fromCol !== toCol && !targetPiece;
+
+                            let enPassantPiece = null;
+                            if (isEnPassant) {
+                                enPassantPiece = chessSet.board[fromRow][toCol];
+                            }
+
+                            
+                            const attackDuration = chessSet.animateAttack(fromRow, fromCol, toRow, toCol, currentTime);
+
+                            
+                            let deathDuration = 0;
+                            if (isCapture) {
+                                chessSet.addCapturedPiece(targetPiece, toRow, toCol, currentTime + attackDuration * 0.5);
+                                deathDuration = 1.2;
+                            } else if (isEnPassant && enPassantPiece) {
+                                chessSet.addCapturedPiece(enPassantPiece, fromRow, toCol, currentTime + attackDuration * 0.5);
+                                deathDuration = 1.2;
+                            }
+                            
+                            const moveStartTime = currentTime + attackDuration * 0.7;
+                            const moveDuration = chessSet.animateMove(fromRow, fromCol, toRow, toCol, moveStartTime);
+
+                            const totalAnimationTime = attackDuration * 0.7 + moveDuration + Math.max(0, deathDuration - moveDuration);
+
                             chessRules.makeMove(chessSet.board, fromRow, fromCol, toRow, toCol);
 
-                            // Reset selection and clear highlights
                             selectedPiece = null;
                             selectedPosition = null;
                             clearHighlights();
 
-                            // Update the status message and show notifications
                             updateStatusMessage(true);
 
-                            // If the game is still ongoing, rotate the camera for the next player
-                            const newGameState = chessRules.getGameState();
-                            if (newGameState.state === GAME_ONGOING) {
-                                // Switch player and rotate camera
-                                isProcessingMove = true;
-                                camera.rotateForPlayerChange(currentTime);
+                            setTimeout(() => {
+                                const newGameState = chessRules.getGameState();
+                                if (newGameState.state === GAME_ONGOING) {
+                                    isProcessingMove = true;
 
-                                // Update the haunted piece when player changes
-                                if (window.hauntedPiece) {
-                                    window.hauntedPiece.onPlayerChanged();
+                                    camera.rotateForPlayerChange(currentTime + totalAnimationTime);
+
+                                    if (window.hauntedPiece) {
+                                        window.hauntedPiece.onPlayerChanged();
+                                    }
                                 }
-                            }
+                            }, totalAnimationTime * 1000);
+
+                            isProcessingMove = true;
                         }
                     }
                 );
@@ -265,17 +263,13 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime) {
                 console.log(`Clicked empty square at [${row}, ${col}]`);
             }
         }
-        // If a piece is already selected, this could be the destination or a new piece selection
         else {
             const fromRow = selectedPosition.row;
             const fromCol = selectedPosition.col;
 
-            // Check if the clicked square contains a piece of the current player's color
             const targetPiece = chessSet.board[row][col];
 
-            // Check if the user clicked on the already selected piece (to deselect it)
             if (selectedPosition && row === selectedPosition.row && col === selectedPosition.col) {
-                // Deselect the piece
                 selectedPiece = null;
                 selectedPosition = null;
                 clearHighlights();
@@ -283,83 +277,134 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime) {
                 return;
             }
 
-            // If clicking on another piece of the same color, select that piece instead
             if (targetPiece && targetPiece[0] === chessRules.currentPlayer) {
-                // Clear previous selection and highlights
                 clearHighlights();
 
-                // Select the new piece
                 selectedPiece = targetPiece;
                 selectedPosition = { row, col };
                 console.log(`Changed selection to: ${targetPiece} at position [${row}, ${col}]`);
 
-                // Show valid moves for the newly selected piece with a callback for when a move is made
                 showValidMoves(chessRules, chessSet.board, row, col, canvas, eye, at, up, projectionMatrix,
-                    // This callback will be called when a move highlight is clicked
                     (fromRow, fromCol, toRow, toCol) => {
-                        // Make the move
                         if (chessRules.isValidMove(chessSet.board, fromRow, fromCol, toRow, toCol)) {
                             console.log(`Moving ${chessSet.board[fromRow][fromCol]} from [${fromRow}, ${fromCol}] to [${toRow}, ${toCol}]`);
 
-                            // Make the move using chess rules
-                            chessRules.makeMove(chessSet.board, fromRow, fromCol, toRow, toCol);
+                            const targetPiece = chessSet.board[toRow][toCol];
+                            const isCapture = targetPiece !== null;
 
-                            // Reset selection and clear highlights
-                            selectedPiece = null;
-                            selectedPosition = null;
-                            clearHighlights();
+                            const movingPiece = chessSet.board[fromRow][fromCol];
+                            const isPawn = movingPiece && movingPiece[1] === 'p';
+                            const isEnPassant = isPawn && fromCol !== toCol && !targetPiece;
 
-                            // Update the status message and show notifications
-                            updateStatusMessage(true);
-
-                            // If the game is still ongoing, rotate the camera for the next player
-                            const newGameState = chessRules.getGameState();
-                            if (newGameState.state === GAME_ONGOING) {
-                                // Switch player and rotate camera
-                                isProcessingMove = true;
-                                camera.rotateForPlayerChange(currentTime);
-
-                                // Update the haunted piece when player changes
-                                if (window.hauntedPiece) {
-                                    window.hauntedPiece.onPlayerChanged();
-                                }
+                            let enPassantPiece = null;
+                            if (isEnPassant) {
+                                enPassantPiece = chessSet.board[fromRow][toCol];
                             }
+
+                            
+                            const attackDuration = chessSet.animateAttack(fromRow, fromCol, toRow, toCol, currentTime);
+
+                            
+                            let deathDuration = 0;
+                            if (isCapture) {
+                                chessSet.addCapturedPiece(targetPiece, toRow, toCol, currentTime + attackDuration * 0.7);
+                                deathDuration = 0.5;
+                            } else if (isEnPassant && enPassantPiece) {
+                                chessSet.addCapturedPiece(enPassantPiece, fromRow, toCol, currentTime + attackDuration * 0.7);
+                                deathDuration = 0.5;
+                            }
+
+                            const totalAnimationTime = Math.max(attackDuration, attackDuration * 0.7 + deathDuration);
+
+                            setTimeout(() => {
+                                chessRules.makeMove(chessSet.board, fromRow, fromCol, toRow, toCol);
+
+                                selectedPiece = null;
+                                selectedPosition = null;
+                                clearHighlights();
+
+                                updateStatusMessage(true);
+
+                                const newGameState = chessRules.getGameState();
+                                if (newGameState.state === GAME_ONGOING) {
+                                    isProcessingMove = true;
+
+                                    setTimeout(() => {
+                                        camera.rotateForPlayerChange(currentTime + totalAnimationTime);
+
+                                        if (window.hauntedPiece) {
+                                            window.hauntedPiece.onPlayerChanged();
+                                        }
+                                    }, deathDuration * 1000);
+                                }
+                            }, attackDuration * 1000 * 0.7);
+
+                            isProcessingMove = true;
                         }
                     }
                 );
             }
-            // Otherwise, treat it as a move attempt
             else if (chessRules.isValidMove(chessSet.board, fromRow, fromCol, row, col)) {
                 console.log(`Moving ${selectedPiece} from [${fromRow}, ${fromCol}] to [${row}, ${col}]`);
 
-                // Make the move using chess rules
+                const targetPiece = chessSet.board[row][col];
+                const isCapture = targetPiece !== null;
+
+                const movingPiece = chessSet.board[fromRow][fromCol];
+                const isPawn = movingPiece && movingPiece[1] === 'p';
+                const isEnPassant = isPawn && fromCol !== col && !targetPiece;
+
+                let enPassantPiece = null;
+                if (isEnPassant) {
+                    enPassantPiece = chessSet.board[fromRow][col];
+                }
+
+                
+                const attackDuration = chessSet.animateAttack(fromRow, fromCol, row, col, currentTime);
+
+                
+                let deathDuration = 0;
+                if (isCapture) {
+                    chessSet.addCapturedPiece(targetPiece, row, col, currentTime + attackDuration * 0.5);
+                    deathDuration = 1.2;
+                } else if (isEnPassant && enPassantPiece) {
+                    chessSet.addCapturedPiece(enPassantPiece, fromRow, col, currentTime + attackDuration * 0.5);
+                    deathDuration = 1.2;
+                }
+
+                
+                const moveStartTime = currentTime + attackDuration * 0.7;
+                const moveDuration = chessSet.animateMove(fromRow, fromCol, row, col, moveStartTime);
+
+                const totalAnimationTime = attackDuration * 0.7 + moveDuration + Math.max(0, deathDuration - moveDuration);
+
                 chessRules.makeMove(chessSet.board, fromRow, fromCol, row, col);
 
-                // Reset selection and clear highlights
                 selectedPiece = null;
                 selectedPosition = null;
                 clearHighlights();
 
-                // Update the status message and show notifications
                 updateStatusMessage(true);
 
-                // If the game is still ongoing, rotate the camera for the next player
-                const newGameState = chessRules.getGameState();
-                if (newGameState.state === GAME_ONGOING) {
-                    // Switch player and rotate camera
-                    isProcessingMove = true;
-                    camera.rotateForPlayerChange(currentTime);
+                setTimeout(() => {
+                    const newGameState = chessRules.getGameState();
+                    if (newGameState.state === GAME_ONGOING) {
+                        isProcessingMove = true;
 
-                    // Update the haunted piece when player changes
-                    if (window.hauntedPiece) {
-                        window.hauntedPiece.onPlayerChanged();
+                        camera.rotateForPlayerChange(currentTime + totalAnimationTime);
+
+                        if (window.hauntedPiece) {
+                            window.hauntedPiece.onPlayerChanged();
+                        }
                     }
-                }
+                }, totalAnimationTime * 1000);
+
+                isProcessingMove = true;
             } else {
                 console.log(`Invalid move from [${fromRow}, ${fromCol}] to [${row}, ${col}]`);
-                // Show notification for invalid move
+                
                 showNotification('Invalid move!', 'error', 1500);
-                // Reset selection and clear highlights on invalid move
+                
                 selectedPiece = null;
                 selectedPosition = null;
                 clearHighlights();
@@ -368,17 +413,22 @@ function handleCanvasClick(event, canvas, chessSet, camera, currentTime) {
     }
 }
 
-// Check if camera animation is complete
+
 function updateCamera(camera, currentTime) {
+    let updated = false;
+
+    
     if (camera.update(currentTime)) {
-        // Camera animation updated
-        if (!camera.isAnimating && isProcessingMove) {
-            // Camera animation complete, allow new moves
-            isProcessingMove = false;
-        }
-        return true;
+        updated = true;
     }
-    return false;
+
+    
+    if (!camera.isAnimating && !window.chessObjects.chessSet.hasRunningAnimations(currentTime) && isProcessingMove) {
+        
+        isProcessingMove = false;
+    }
+
+    return updated;
 }
 
 export { handleCanvasClick, updateCamera, initStatusMessage, chessRules };

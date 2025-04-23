@@ -15,6 +15,66 @@
 			box-sizing: border-box;
 			display: block;
 		}
+
+		/* Controls Panel Styles */
+		#controls-panel {
+			position: absolute;
+			top: 10px;
+			right: 10px;
+			background-color: rgba(0, 0, 0, 0.7);
+			color: white;
+			padding: 20px;
+			border-radius: 8px;
+			font-family: Arial, sans-serif;
+			z-index: 1000;
+			width: 350px;
+			max-height: 80vh;
+			overflow-y: auto;
+			box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+			font-size: 16px;
+		}
+
+		#controls-panel h3 {
+			margin-top: 15px;
+			margin-bottom: 8px;
+			color: #4CAF50;
+			border-bottom: 1px solid #4CAF50;
+			padding-bottom: 5px;
+			font-size: 18px;
+		}
+
+		#controls-panel ul {
+			padding-left: 20px;
+			margin: 5px 0;
+		}
+
+		#controls-panel li {
+			margin-bottom: 8px;
+			line-height: 1.4;
+		}
+
+		#toggle-controls {
+			position: absolute;
+			top: 10px;
+			right: 10px;
+			background-color: #4CAF50;
+			color: white;
+			border: none;
+			border-radius: 5px;
+			padding: 8px 15px;
+			cursor: pointer;
+			z-index: 1001;
+			font-weight: bold;
+			font-size: 16px;
+		}
+
+		#toggle-controls:hover {
+			background-color: #45a049;
+		}
+
+		.hidden {
+			display: none !important;
+		}
 	</style>
 </head>
 
@@ -22,6 +82,36 @@
 	<canvas id="glcanvas" width="800" height="600">
 		Your browser does not support HTML5
 	</canvas>
+
+	<!-- Controls Toggle Button -->
+	<button id="toggle-controls">Controls</button>
+
+	<!-- Controls Panel -->
+	<div id="controls-panel">
+		<h2 style="margin-top: 0; font-size: 22px; margin-bottom: 15px;">Chess Controls</h2>
+
+		<h3>Camera Controls</h3>
+		<ul>
+			<li><strong>Orbit:</strong> Right-click + drag</li>
+			<li><strong>Zoom:</strong> Mouse wheel</li>
+		</ul>
+
+		<h3>Game Controls</h3>
+		<ul>
+			<li><strong>Select Piece:</strong> Left-click on a piece</li>
+			<li><strong>Move Piece:</strong> Left-click on a highlighted square</li>
+			<li><strong>Cancel Selection:</strong> Click on a different piece or ESC</li>
+		</ul>
+
+		<h3>Game Information</h3>
+		<ul>
+			<li>The current player and game status are shown in the top-left corner</li>
+			<li>Valid moves are highlighted when you select a piece</li>
+			<li>The camera automatically rotates to the current player's perspective</li>
+			<li>One piece at random will rotate and follow your mouse pointer (no bearing on gameplay)</li>
+		</ul>
+	</div>
+
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"
 		integrity="sha512-zhHQR0/H5SEBL3Wn6yYSaTTZej12z0hVZKOv3TwCUXT1z5qeqGcXJLLrbERYRScEDDpYIJhPC1fk31gqR783iQ=="
 		crossorigin="anonymous" defer></script>

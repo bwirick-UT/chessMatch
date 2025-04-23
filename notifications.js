@@ -1,16 +1,11 @@
-// Chess game notifications
 
-// Create and show a modal notification
 function showNotification(message, type = 'info', duration = 0) {
-    // Check if a notification already exists
+    
     let notificationElement = document.getElementById('chess-notification');
     
-    // If not, create a new one
     if (!notificationElement) {
         notificationElement = document.createElement('div');
         notificationElement.id = 'chess-notification';
-        
-        // Style the notification
         notificationElement.style.position = 'fixed';
         notificationElement.style.top = '50%';
         notificationElement.style.left = '50%';
@@ -25,7 +20,7 @@ function showNotification(message, type = 'info', duration = 0) {
         notificationElement.style.minWidth = '300px';
         notificationElement.style.maxWidth = '80%';
         
-        // Add a close button
+        
         const closeButton = document.createElement('button');
         closeButton.textContent = 'OK';
         closeButton.style.marginTop = '15px';
@@ -39,11 +34,9 @@ function showNotification(message, type = 'info', duration = 0) {
             document.body.removeChild(notificationElement);
         });
         
-        // Add to the document
         document.body.appendChild(notificationElement);
     }
     
-    // Set the notification type
     switch (type) {
         case 'success':
             notificationElement.style.backgroundColor = '#4CAF50';
@@ -64,10 +57,8 @@ function showNotification(message, type = 'info', duration = 0) {
             break;
     }
     
-    // Set the message
     notificationElement.innerHTML = `<div>${message}</div>`;
     
-    // Add a close button
     const closeButton = document.createElement('button');
     closeButton.textContent = 'OK';
     closeButton.style.marginTop = '15px';
@@ -85,7 +76,7 @@ function showNotification(message, type = 'info', duration = 0) {
     
     notificationElement.appendChild(closeButton);
     
-    // Auto-close after duration (if specified)
+    
     if (duration > 0) {
         setTimeout(() => {
             if (document.body.contains(notificationElement)) {
@@ -95,22 +86,18 @@ function showNotification(message, type = 'info', duration = 0) {
     }
 }
 
-// Show a check notification
 function showCheckNotification(player) {
     showNotification(`${player === 'w' ? 'White' : 'Black'} is in check!`, 'warning', 2000);
 }
 
-// Show a checkmate notification
 function showCheckmateNotification(winner) {
     showNotification(`Checkmate! ${winner === 'w' ? 'White' : 'Black'} wins!`, 'success');
 }
 
-// Show a stalemate notification
 function showStalemateNotification() {
     showNotification('Stalemate! The game is a draw.', 'info');
 }
 
-// Show a draw notification
 function showDrawNotification() {
     showNotification('Draw! The game is a draw.', 'info');
 }
